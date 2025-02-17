@@ -1,0 +1,84 @@
+name: Flutter CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+      - develop
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up Dart SDK
+      uses: dart-lang/setup-dart@v1
+      with:
+        sdk: stable
+
+    - name: Set up Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: 'stable'
+
+    - name: Install dependencies
+      run: |
+        flutter pub get
+
+    - name: Analyze code
+      run: |
+        flutter analyze
+
+    - name: Format code
+      run: |
+        flutter format --set-exit-if-changed .
+
+    - name: Run tests
+      run: |
+        flutter test
+
+    - name: Check for outdated dependencies
+      run: |
+        flutter pub outdated
+
+    - name: Build app for Android
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+      run: |
+        flutter build appbundle --release
+
+    - name: Build app for iOS
+      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
+      run: |
+        flutter build ios --release --no-codesign
+
+    - name: Firebase App Distribution (Android)
+      if: github.ref == 'refs/heads/develop'
+      run: |
+        firebase appdistribution:distribute build/app/outputs/bundle/release/app-release.aab --app <your_firebase_app_id> --groups "testers"
+
+    - name: Fastlane for Android (Production Deploy)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        curl -sSL https://get.rvm.io | bash -s stable
+        source ~/.rvm/scripts/rvm
+        gem install fastlane -NV
+        fastlane android deploy
+
+    - name: Fastlane for iOS (Production Deploy)
+      if: github.ref == 'refs/heads/main'
+      run: |
+        curl -sSL https://get.rvm.io | bash -s stable
+        source ~/.rvm/scripts/rvm
+        gem install fastlane -NV
+        fastlane ios deploy
+
+    - name: Cleanup
+      run: |
+        flutter clean
