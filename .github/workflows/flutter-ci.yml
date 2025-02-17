@@ -1,84 +1,96 @@
-name: Flutter CI/CD Pipeline
+stages:
+  - build
+  - test
+  - deploy
 
-on:
-  push:
-    branches:
-      - main
-      - develop
-  pull_request:
-    branches:
-      - main
-      - develop
+# Cache dependencies for faster build
+cache:
+  paths:
+    - .pub-cache/
 
-jobs:
-  flutter:
-    runs-on: ubuntu-latest
+# Default image for running the jobs (Flutter Docker image)
+image: cirrusci/flutter:stable
 
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+# Job to install dependencies and set up Flutter
+install_dependencies:
+  stage: build
+  script:
+    - flutter pub get  # Install Flutter dependencies
+  only:
+    - main
+    - develop
 
-    - name: Set up Dart SDK
-      uses: dart-lang/setup-dart@v1
-      with:
-        sdk: stable
+# Job to analyze the code
+analyze_code:
+  stage: test
+  script:
+    - flutter analyze  # Run code analysis
+  only:
+    - main
+    - develop
 
-    - name: Set up Flutter
-      uses: subosito/flutter-action@v2
-      with:
-        flutter-version: 'stable'
+# Job to format the code
+format_code:
+  stage: test
+  script:
+    - flutter format --set-exit-if-changed .  # Format code
+  only:
+    - main
+    - develop
 
-    - name: Install dependencies
-      run: |
-        flutter pub get
+# Job to run unit and widget tests
+run_tests:
+  stage: test
+  script:
+    - flutter test  # Run Flutter unit and widget tests
+  only:
+    - main
+    - develop
 
-    - name: Analyze code
-      run: |
-        flutter analyze
+# Job to check outdated dependencies
+check_dependencies:
+  stage: test
+  script:
+    - flutter pub outdated  # Check for outdated dependencies
+  only:
+    - main
+    - develop
 
-    - name: Format code
-      run: |
-        flutter format --set-exit-if-changed .
+# Job to build the app for Android
+build_android:
+  stage: build
+  script:
+    - flutter build appbundle --release  # Build Android app bundle
+  only:
+    - main
+    - develop
 
-    - name: Run tests
-      run: |
-        flutter test
+# Job to build the app for iOS
+build_ios:
+  stage: build
+  script:
+    - flutter build ios --release --no-codesign  # Build iOS app
+  only:
+    - main
+    - develop
 
-    - name: Check for outdated dependencies
-      run: |
-        flutter pub outdated
+# Job to deploy the app for Android (Google Play)
+deploy_android:
+  stage: deploy
+  script:
+    - echo "Deploying Android app to Google Play..."
+    # Add Fastlane or Google Play deployment script here
+    # - fastlane android release
+  only:
+    - main
 
-    - name: Build app for Android
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-      run: |
-        flutter build appbundle --release
-
-    - name: Build app for iOS
-      if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop'
-      run: |
-        flutter build ios --release --no-codesign
-
-    - name: Firebase App Distribution (Android)
-      if: github.ref == 'refs/heads/develop'
-      run: |
-        firebase appdistribution:distribute build/app/outputs/bundle/release/app-release.aab --app <your_firebase_app_id> --groups "testers"
-
-    - name: Fastlane for Android (Production Deploy)
-      if: github.ref == 'refs/heads/main'
-      run: |
-        curl -sSL https://get.rvm.io | bash -s stable
-        source ~/.rvm/scripts/rvm
-        gem install fastlane -NV
-        fastlane android deploy
-
-    - name: Fastlane for iOS (Production Deploy)
-      if: github.ref == 'refs/heads/main'
-      run: |
-        curl -sSL https://get.rvm.io | bash -s stable
-        source ~/.rvm/scripts/rvm
-        gem install fastlane -NV
-        fastlane ios deploy
-
-    - name: Cleanup
-      run: |
-        flutter clean
+# Job to deploy the app for iOS (TestFlight or App Store)
+deploy_ios:
+  stage: deploy
+  script:
+    - echo "Deploying iOS app to TestFlight/App Store..."
+    # Add Fastlane or App Store deployment script here
+    # - fastlane ios beta  # For TestFlight deployment
+    # - fastlane ios release  # For App Store deployment
+  only:
+    - main
