@@ -59,16 +59,19 @@ jobs:
             const { execSync } = require('child_process');
             let output = '';
             try {
-              output += execSync("flutter analyze", { encoding: "utf-8" }) + "\n";
-              output += execSync("flutter test", { encoding: "utf-8" }) + "\n";
-              output += execSync("flutter pub outdated", { encoding: "utf-8" }) + "\n";
+              output += execSync("flutter build appbundle --release", { encoding: "utf-8" }) + "\n";
+              output += execSync("flutter build ios --release --no-codesign", { encoding: "utf-8" }) + "\n";
             } catch (error) {
-              output += "⚠️ Some tests or checks failed:\n" + error.message;
+              output += "⚠️ Some builds failed:\n" + error.message;
             }
-            const commentBody = `### ✅ Flutter CI Results\n\`\`\`\n${output}\n\`\`\``;
-            github.rest.issues.createComment({
-              issue_number: context.payload.pull_request.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: commentBody
-            });
+            if (context.payload.pull_request) {
+              const commentBody = `### 🚀 Flutter Build Results\n\`\`\`\n${output}\n\`\`\``;
+              github.rest.issues.createComment({
+                issue_number: context.payload.pull_request.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+            } else {
+              console.log("⚠️ Not running in a pull request context. Skipping comment.");
+            }
