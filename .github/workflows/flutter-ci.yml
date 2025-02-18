@@ -1,18 +1,19 @@
 name: Flutter CI (Pull Request Validation)
 
 on:
-  push:
+  push:                     # ✅ Runs on any push
     branches:
       - main
       - develop
-  pull_request:
+  pull_request:             # ✅ Runs on any PR
+    types: [opened, synchronize, reopened]
     branches:
       - main
       - develop
 
 jobs:
   flutter-ci:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: write
@@ -20,32 +21,23 @@ jobs:
     steps:
       - name: 🛠 Checkout Code
         uses: actions/checkout@v4
-        
+      - name: 🕵️ Check Current User & Privileges
+        run: |
+          echo "Current User: $(whoami)"
+          echo "User ID & Groups: $(id)"
+          echo "Default Shell: $SHELL"
+          sudo -l  # Check sudo privileges
       - name: 🎯 Set Up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.30.0-1.0.pre.196"
-          channel: "master"
-          architecture: "aarch64"
+          flutter-version: "3.19.0"
           cache: true
-
-      - name: Clear Flutter cache
-        run: |
-          flutter clean
-          rm -rf ~/.pub-cache    
-
-      - name: Check Flutter Installation
-        run: |
-          flutter --version
-          flutter doctor
-
       - name: Upgrade Flutter & Dart
         run: |
           flutter upgrade
           dart --version
           flutter --version
           flutter doctor
-
       - name: 📦 Install Dependencies
         run: flutter pub get
 
@@ -53,43 +45,36 @@ jobs:
         run: |
           flutter analyze
           dart format --set-exit-if-changed .
-
       - name: ✅ Run Tests (Unit & Widget)
         run: flutter test
 
       - name: 📌 Check for Outdated Dependencies
         run: flutter pub outdated
 
-      - name: 🚀 Build the Flutter App Bundle
-        run: |
-          flutter build appbundle --release
-          flutter build ios --release --no-codesign
-
-      - name: Deploy to EC2
-        if: always()  # Ensure deployment runs even if tests or build fail
-        uses: appleboy/ssh-action@v0.1.6  # Updated version
+      - name: 🚀 Comment Test Results on PR
+        if: always()
+        uses: actions/github-script@v7
         with:
-          host: ${{ secrets.EC2_HOST }}  # Your EC2 IP or hostname
-          username: ${{ secrets.EC2_USER }}  # Your EC2 user (e.g., ec2-user, ubuntu)
-          key: ${{ secrets.EC2_SSH_KEY }}  # Your private SSH key
-          port: 22  # Default SSH port
           script: |
-            # Change to the directory where the app is to be deployed
-            cd /home/ubuntu/my-flutter-app || exit
+            const fs = require('fs');
+            const { execSync } = require('child_process');
 
-            # Stop the app (if running) and prepare to deploy the new build
-            echo "Stopping existing Flutter app (if any)"
-            pm2 stop flutter-app || true  # If using PM2, else use your own method
-
-            # Deploy the Flutter app build (copying the build artifact)
-            echo "Deploying new Flutter app build..."
-            scp -i ${{ secrets.EC2_SSH_KEY }} build/app/outputs/bundle/release/app-release.aab ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/my-flutter-app/app-release.aab
-
-            # Optional: Run flutter pub get on the server if needed
-            echo "Running flutter pub get on the server..."
-            ssh -i ${{ secrets.EC2_SSH_KEY }} ubuntu@${{ secrets.EC2_HOST }} "flutter pub get"
-
-            # Start or restart your Flutter app (adjust according to how your app is run)
-            pm2 start /home/ubuntu/my-flutter-app/your-app-script.sh  # Replace with your start script or method
-
-            echo "Deployment complete!"
+            let output = '';
+            try {
+              output += execSync("flutter analyze", { encoding: "utf-8" }) + "\n";
+              output += execSync("flutter test", { encoding: "utf-8" }) + "\n";
+              output += execSync("flutter pub outdated", { encoding: "utf-8" }) + "\n";
+            } catch (error) {
+              output += "⚠️ Some tests or checks failed:\n" + error.message;
+            }
+            if (context.payload.pull_request) {
+              const commentBody = `### ✅ Flutter CI Results\n\`\`\`\n${output}\n\`\`\``;
+              github.rest.issues.createComment({
+                issue_number: context.payload.pull_request.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: commentBody
+              });
+            } else {
+              console.log("⚠️ Not running in a pull request context. Skipping comment.");
+            }
