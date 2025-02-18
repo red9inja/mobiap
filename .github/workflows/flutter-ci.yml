@@ -1,18 +1,18 @@
 name: Flutter CI (Pull Request Validation)
 
 on:
-  push:                     # ✅ Runs on any push
+  push:
     branches:
       - main
       - develop
-  pull_request:             # ✅ Runs on any PR
+  pull_request:
     branches:
       - main
       - develop
 
 jobs:
   flutter-ci:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     permissions:
       contents: read
       pull-requests: write
@@ -20,17 +20,22 @@ jobs:
     steps:
       - name: 🛠 Checkout Code
         uses: actions/checkout@v4
-      - name: 🕵️ Check Current User & Privileges
-        run: |
-          echo "Current User: $(whoami)"
-          echo "User ID & Groups: $(id)"
-          echo "Default Shell: $SHELL"
-          sudo -l  # Check sudo privileges
       - name: 🎯 Set Up Flutter
         uses: subosito/flutter-action@v2
         with:
-          flutter-version: "3.19.0"
+          flutter-version: "3.30.0-1.0.pre.196"  # Match your version
+          channel: "master"  # Use 'master' channel for pre-release
+          architecture: "aarch64"  # ARM64 architecture (since you're on it)
           cache: true
+      - name: Clear Flutter cache
+        run: |
+          flutter clean
+          rm -rf ~/.pub-cache    
+      - name: Check Flutter Installation
+        run: |
+          echo "Checking Flutter version..."
+          flutter --version
+          flutter doctor
       - name: Upgrade Flutter & Dart
         run: |
           flutter upgrade
@@ -39,18 +44,15 @@ jobs:
           flutter doctor
       - name: 📦 Install Dependencies
         run: flutter pub get
-
       - name: 🔍 Run Code Quality Checks
         run: |
           flutter analyze
           dart format --set-exit-if-changed .
       - name: ✅ Run Tests (Unit & Widget)
         run: flutter test
-
       - name: 📌 Check for Outdated Dependencies
         run: flutter pub outdated
-
-      - name: 🚀 Comment Test Results on PR
+      - name: 🚀 Build and Comment on PR
         if: always()
         uses: actions/github-script@v7
         with:
