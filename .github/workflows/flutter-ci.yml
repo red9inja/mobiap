@@ -1,96 +1,74 @@
-stages:
-  - build
-  - test
-  - deploy
+name: Flutter CI (Pull Request Validation)
 
-# Cache dependencies for faster build
-cache:
-  paths:
-    - .pub-cache/
+on:
+  push:                     # ✅ Runs on any push
+    branches:
+      - main
+      - develop
+  pull_request:             # ✅ Runs on any PR
+    branches:
+      - main
+      - develop
 
-# Default image for running the jobs (Flutter Docker image)
-image: cirrusci/flutter:stable
+jobs:
+  flutter-ci:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
 
-# Job to install dependencies and set up Flutter
-install_dependencies:
-  stage: build
-  script:
-    - flutter pub get  # Install Flutter dependencies
-  only:
-    - main
-    - develop
+    steps:
+      - name: 🛠 Checkout Code
+        uses: actions/checkout@v4
+      - name: 🕵️ Check Current User & Privileges
+        run: |
+          echo "Current User: $(whoami)"
+          echo "User ID & Groups: $(id)"
+          echo "Default Shell: $SHELL"
+          sudo -l  # Check sudo privileges
+      - name: 🎯 Set Up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.19.0"
+          cache: true
+      - name: Upgrade Flutter & Dart
+        run: |
+          flutter upgrade
+          dart --version
+          flutter --version
+          flutter doctor
+      - name: 📦 Install Dependencies
+        run: flutter pub get
 
-# Job to analyze the code
-analyze_code:
-  stage: test
-  script:
-    - flutter analyze  # Run code analysis
-  only:
-    - main
-    - develop
+      - name: 🔍 Run Code Quality Checks
+        run: |
+          flutter analyze
+          dart format --set-exit-if-changed .
+      - name: ✅ Run Tests (Unit & Widget)
+        run: flutter test
 
-# Job to format the code
-format_code:
-  stage: test
-  script:
-    - flutter format --set-exit-if-changed .  # Format code
-  only:
-    - main
-    - develop
+      - name: 📌 Check for Outdated Dependencies
+        run: flutter pub outdated
 
-# Job to run unit and widget tests
-run_tests:
-  stage: test
-  script:
-    - flutter test  # Run Flutter unit and widget tests
-  only:
-    - main
-    - develop
-
-# Job to check outdated dependencies
-check_dependencies:
-  stage: test
-  script:
-    - flutter pub outdated  # Check for outdated dependencies
-  only:
-    - main
-    - develop
-
-# Job to build the app for Android
-build_android:
-  stage: build
-  script:
-    - flutter build appbundle --release  # Build Android app bundle
-  only:
-    - main
-    - develop
-
-# Job to build the app for iOS
-build_ios:
-  stage: build
-  script:
-    - flutter build ios --release --no-codesign  # Build iOS app
-  only:
-    - main
-    - develop
-
-# Job to deploy the app for Android (Google Play)
-deploy_android:
-  stage: deploy
-  script:
-    - echo "Deploying Android app to Google Play..."
-    # Add Fastlane or Google Play deployment script here
-    # - fastlane android release
-  only:
-    - main
-
-# Job to deploy the app for iOS (TestFlight or App Store)
-deploy_ios:
-  stage: deploy
-  script:
-    - echo "Deploying iOS app to TestFlight/App Store..."
-    # Add Fastlane or App Store deployment script here
-    # - fastlane ios beta  # For TestFlight deployment
-    # - fastlane ios release  # For App Store deployment
-  only:
-    - main
+      - name: 🚀 Comment Test Results on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+            let output = '';
+            try {
+              output += execSync("flutter analyze", { encoding: "utf-8" }) + "\n";
+              output += execSync("flutter test", { encoding: "utf-8" }) + "\n";
+              output += execSync("flutter pub outdated", { encoding: "utf-8" }) + "\n";
+            } catch (error) {
+              output += "⚠️ Some tests or checks failed:\n" + error.message;
+            }
+            const commentBody = `### ✅ Flutter CI Results\n\`\`\`\n${output}\n\`\`\``;
+            github.rest.issues.createComment({
+              issue_number: context.payload.pull_request.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: commentBody
+            });
